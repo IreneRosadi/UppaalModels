@@ -1,0 +1,1953 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_2.dtd'>
+<nta>
+	<declaration>// Place global declarations here.
+
+//processes IDs
+
+const int ID_SAI_INITIATOR = 0;                          //SAI initiator
+const int ID_SAI_RESPONDER = 1;                          //SAI responder
+const bool Initiator = true;
+
+//signals ID
+const int SIG_Sa_CONNECT_request=1;        
+const int SIG_Sa_CONNECT_confirm=2;        
+const int SIG_Sa_CONNECT_indication=3;    
+const int SIG_Sa_CONNECT_response=4;       
+const int SIG_Sa_DISCONNECT_request=5;     
+const int SIG_Sa_DISCONNECT_indication=6;  
+const int SIG_Sa_DATA_request=7;           
+const int SIG_Sa_DATA_indication=8;         
+                     
+//fixed constants
+const int INT16_MAX = 32767;                             //max value for sn and SAI_CLOCK, according to UPPAL max integer assignment
+const int N = 2;                                         //number of operating devices
+const int MTF_max = 6;                                   //message type field max value
+const int SN_max = INT16_MAX;                            //sequence number max value
+const int O_Start = 1;                                   //message type field for OffsetStart message
+const int O_Answ1 = 2;                                   //message type field for OffsetAnsw1 message
+const int O_Answ2 = 3;                                   //message type field for OffsetAnsw2 message
+const int O_Est = 4;                                     //message type field for OffsetEst message
+const int O_End = 5;                                     //message type field for OffsetEnd message
+const int App_Msg = 6;                                   //message type field for Application message protected with TTS
+
+//parameters to set            
+const int queue_size = 15;                                //max element number in sig_queue
+const int N_max_lost_msg[N] = {3,3};                     //SAI max lost msg number + 1 (N_max_lost_msg must be &gt;=1)
+const int N_max_succ_err[N] = {2,2};                     //SAI max number of succesive errors + 1
+const int msg_freq[N] = {8,8};                           //SAI_User frequency for msg exchange
+const int T_reply_max[N] = {3*msg_freq[0],3*msg_freq[1]};//SAI_User max time value without any reply
+const int T_start_max[N] = {2,2};                        //SAI_Conn max time value for answers in clock offset update procedure
+const int T_conn_max = 4*T_start_max[ID_SAI_INITIATOR];  //SAI_User initiator max time value for responder connection confirm
+const int T_off_max = 3;                                 //SAI_Conn_Ini max difference between initiator min offset and responder max offset estimation
+const int T_max[N] = {5,5};                              //SAI max validity time of incoming msgs
+const int offset_update_freq[N] = {500,500};             //SAI_Update_Req frequency for offset update procedure
+const int T_extra_delay = 0;                             //extra delays due to the processing time of the application data in the sender sub-system (default 0)
+const int T_commSystemCheck_min = 250;                   //Communication_System min waiting time for check
+const int T_tryFaultInjection_min = 10;                 //FaultInjector min waiting time for fault injection
+const double s_time = 0.0;                               //SAI_clock starting time
+const double temporal_drift = 0.0;                      //SAI_clock temporal drift
+
+//parameters to set: rate
+const double connRate = 1.0;                             //SAI_User initiator connection rate
+const double msgDelayStandard[N] = {2.0,2.0};            //SAI standard msg delay
+const double msgDelayInjected = 0.4*msgDelayStandard[0]; //SAI injected msg delay for transmission delay threat
+const double commSystemCheckRate = 1.0;                  //Communication_System check rate
+const double tryFaultInjectionRate = 1.0;                //FaultInjector fault rate
+
+//parameters to set: weight
+const int sendDataMsg = 99;                             //SAI_User weight for application data msg sending
+const int stopConnMsg = 1;                               //SAI_User weight for safe connection release msg sending
+
+const int safeConn = 99;                                //Euroradio_SL weight for safe connection maintenance 
+const int disruptiveConnRelease = 1;                     //Euroradio_SL weight for EuroradioSL failure
+
+const int noEuroradioFailure = 99;                      //Euroradio_Env weight for no failure occurrance
+const int euroradioFailure = 1;                          //Euroradio_Env weight for failure occurrance
+
+const int noFault = 1;                                  //FaultInjector weight for no fault injection 
+const int fault = 1;                                     //FaultInjector weight for fault injection 
+  
+const int transmissionDelay = 1;                         //Euroradio_Env weight for transmission delay threats 
+const int deletion = 1;                                  //Euroradio_Env weight for msg deletion threats
+const int resequencing = 1;                              //Euroradio_Env weight for msg resequencing threats
+const int repetition = 1;                                //Euroradio_Env weight for msg repetition threats
+
+
+//definitions    
+typedef int[0,N-1] id_t;                                 //allowed values for SAI id
+typedef int[0,SN_max] sn_t;                              //allowed values for Sequence Number
+typedef int[0,MTF_max] mtf_t;                            //allowed values for Message Type Field
+
+typedef struct 
+{
+    int min_offset;                                      //min offset estimation
+    int max_offset;                                      //max offset estimation
+    int check_field;                                     //result of clock offset estimation check: 1 if clock offset estimation comparison is validated, 0 otherwise
+
+} data_t;                                                //user data structure
+
+typedef struct 
+{
+    mtf_t mtf;                                           //message type field
+    sn_t sn;                                             //msg sequence number
+    int s_ts;                                            //sender time stamp
+    int last_r_ts;                                       //last received time stamp
+    int s_last_r_ts;                                     //sender time stamp at last received msg
+    data_t user_data;                                    //user data used in OffsetEst message during clock offset update procedure
+
+} msg_t;                                                 //msg structure
+
+typedef struct 
+{
+    int sig_id;                                          //signal id
+    msg_t msg;                                           //msg to exchange
+
+} sig_t;                                                 //signal structure
+
+//channels
+broadcast chan 
+SAI_CONNECT_request[N], SAI_CONNECT_confirm[N], SAI_CONNECT_indication[N], SAI_CONNECT_response[N],        //primitives for SAI_User - SAI entity connection communications
+SAI_DATA_request[N], SAI_DATA_indication[N],                                                               //primitives for SAI_User - SAI entity message exchange communications
+SAI_DISCONNECT_request[N], SAI_DISCONNECT_indication[N],                                                   //primitives for SAI_User - SAI entity disconnection communications
+Sa_CONNECT_request[N], Sa_CONNECT_confirm[N], Sa_CONNECT_indication[N], Sa_CONNECT_response[N],            //primitive for Euroradio_Env - SAI entity connection communications
+Sa_DATA_request[N], Sa_DATA_indication[N],                                                                 //primitive for Euroradio_Env - SAI entity message exchange communications
+Sa_DISCONNECT_request[N], Sa_DISCONNECT_indication[N],                                                     //primitive for Euroradio_Env - SAI entity disconnection communications
+tau_offset_update_request[N], tau_offset_update_answer[N],                                                 //tau SAI signals for offset update procedure request and answer
+tau_safe_conn_release[N],                                                                                  //tau SAI signal for safe connection release communications
+tau_error_notification[N],                                                                                 //SAI signals for error notification to SAI_User          
+tau_CommSystem_fault;                                                                                      //Communication_System signal for internal error communications to Euroradio_SL_Env
+
+                                                                                                
+//constants
+const data_t empty_user_data = {0, 0, 0};                    //empty user data
+const msg_t empty_msg = {0, 0, 0, 0, 0,empty_user_data};     //empty message
+const sig_t empty_sig = {0,empty_msg};                       //empty signal
+
+
+//variables
+sig_t sig_out = empty_sig;                             //variable for SAI entity - Euroradio_Env signal exchange 
+sig_t sig_queue[N][queue_size];                        //SAI entity signal queue 
+bool isConnected[N] = {false,false};                   //true if SAI entity is connected
+bool isTTSInitializing = false;                        //true if TTS init is taking place
+
+clock SAI_clock[N] = {s_time,s_time+temporal_drift};   //SAI clock
+
+double msgDelay[N] = msgDelayStandard;                 //SAI msg delay variable
+
+int sn[N] = {-1,-1};                                   //SAI msg sn (-1 if no msg has been sent yet)
+int last_sn[N] = {-1,-1};                              //SAI sn of last received and validated msg (-1 if no msg has been validated yet)
+int last_received_ts[N] = {0,0};                       //SAI last received time stamp 
+int last_msg_ts[N] = {0,0};                            //SAI time stamp at last msg reception
+
+int T_offset_max[N] = {0,0};                           //SAI maximum offset estimations
+int T_offset_min[N] = {0,0};                           //SAI minimum offset estimations
+
+
+//functions
+
+bool allSAIConnected()        //true if all N SAI are connected
+{    
+    return forall(i: id_t) isConnected[i];
+}
+
+bool isQueueEmpty(id_t SAI_id)
+{
+    return sig_queue[SAI_id][queue_size-1]==empty_sig; 
+}
+
+bool isQueueFull(int id)
+{
+    return sig_queue[id][0]!=empty_sig; 
+}
+
+void computeMinMaxOffsets(id_t SAI_id, sig_t sig) 
+{
+    T_offset_min[SAI_id]:=sig.msg.last_r_ts-sig.msg.s_last_r_ts;
+    T_offset_max[SAI_id]:=last_msg_ts[SAI_id]-last_received_ts[SAI_id];
+}
+
+void prepareSig(sig_t &amp;sig, int sig_id)
+{
+    sig.sig_id:=sig_id;
+}
+
+void prepareTTSSig(sig_t &amp;sig, int sig_id, int msg_mtf, int msg_sn, int msg_s_ts, int msg_last_r_ts, int msg_s_last_r_ts)
+{
+    sig.sig_id:=sig_id;
+    sig.msg.mtf:=msg_mtf;
+    sig.msg.sn:=msg_sn;
+    sig.msg.s_ts:=msg_s_ts;
+    sig.msg.last_r_ts:=msg_last_r_ts;
+    sig.msg.s_last_r_ts:=msg_s_last_r_ts;
+}
+
+void resetParams(id_t SAI_id)
+{
+    last_sn[SAI_id]:=-1;
+    last_received_ts[SAI_id]:=0;
+    last_msg_ts[SAI_id]:=0;
+    T_offset_max[SAI_id]:=0;
+    T_offset_min[SAI_id]:=0;
+}
+</declaration>
+	<template>
+		<name>Fault_Injector</name>
+		<declaration>
+clock t;
+
+id_t id;
+int n_pos_max;
+sig_t sig:=empty_sig;
+
+
+void shiftFirstSig(int id, int n_pos)
+{
+    int i;
+    for (i:=0;i&lt;queue_size;i++)
+    {   
+        if(sig_queue[id][i]!=empty_sig) 
+        {
+            int j:=i;
+            int pos_switch:=0;
+            sig_t tmp;
+            while (pos_switch&lt;n_pos)
+            {
+                if (j == queue_size-1)
+                {
+                    return;
+                }
+                tmp:=sig_queue[id][j+1];
+                sig_queue[id][j+1]:=sig_queue[id][j];
+                sig_queue[id][j]:=tmp;
+                pos_switch++;
+                j++;
+            }
+        }
+    }
+}
+
+void deleteFirstSig(int id)
+{
+    int i;
+    for (i:=0;i&lt;queue_size;i++)
+    {   
+        if(sig_queue[id][i]!=empty_sig) 
+        {
+            sig_queue[id][i]:=empty_sig;
+            return;
+        }
+    }
+}
+
+void repeatFirstSig(int id)
+{
+    int i;
+    for (i:=0;i&lt;queue_size;i++)
+    {   
+        if(sig_queue[id][i]!=empty_sig) 
+        {
+            if(i!=0)
+            {
+                sig_queue[id][i-1]:=sig_queue[id][i];
+            } 
+            return;
+        }
+    }
+    
+}</declaration>
+		<location id="id0" x="-1122" y="-1513">
+			<name x="-1173" y="-1530">Wait</name>
+			<label kind="exponentialrate" x="-1284" y="-1513">tryFaultInjectionRate</label>
+		</location>
+		<location id="id1" x="-799" y="-1581">
+			<name x="-782" y="-1589">DoFault</name>
+			<committed/>
+		</location>
+		<branchpoint id="id2" x="-799" y="-1513">
+		</branchpoint>
+		<branchpoint id="id3" x="-799" y="-1649">
+		</branchpoint>
+		<init ref="id0"/>
+		<transition>
+			<source ref="id1"/>
+			<target ref="id3"/>
+		</transition>
+		<transition>
+			<source ref="id2"/>
+			<target ref="id0"/>
+			<label kind="assignment" x="-790" y="-1479">t:=0</label>
+			<label kind="probability" x="-790" y="-1496">noFault</label>
+			<nail x="-799" y="-1411"/>
+			<nail x="-1122" y="-1411"/>
+		</transition>
+		<transition>
+			<source ref="id2"/>
+			<target ref="id1"/>
+			<label kind="probability" x="-790" y="-1547">fault</label>
+		</transition>
+		<transition>
+			<source ref="id0"/>
+			<target ref="id2"/>
+			<label kind="select" x="-1088" y="-1513">SAI_id: int[0,N-1]</label>
+			<label kind="guard" x="-1088" y="-1496">t &gt;= T_tryFaultInjection_min &amp;&amp;
+!isQueueEmpty(SAI_id) &amp;&amp;
+allSAIConnected()</label>
+			<label kind="assignment" x="-1088" y="-1445">id:=SAI_id</label>
+		</transition>
+		<transition>
+			<source ref="id3"/>
+			<target ref="id0"/>
+			<label kind="select" x="-918" y="-1785">n_pos: int[1,2]</label>
+			<label kind="assignment" x="-969" y="-1768">shiftFirstSig(id,n_pos),
+                             t:=0</label>
+			<label kind="probability" x="-918" y="-1802">resequencing</label>
+			<nail x="-799" y="-1802"/>
+			<nail x="-1122" y="-1802"/>
+		</transition>
+		<transition>
+			<source ref="id3"/>
+			<target ref="id0"/>
+			<label kind="assignment" x="-935" y="-1632">deleteFirstSig(id),
+                      t:=0</label>
+			<label kind="probability" x="-876" y="-1649">deletion</label>
+			<nail x="-1122" y="-1649"/>
+		</transition>
+		<transition>
+			<source ref="id3"/>
+			<target ref="id0"/>
+			<label kind="assignment" x="-935" y="-1700">repeatFirstSig(id),
+                      t:=0</label>
+			<label kind="probability" x="-885" y="-1717">repetition</label>
+			<nail x="-799" y="-1717"/>
+			<nail x="-1122" y="-1717"/>
+		</transition>
+		<transition>
+			<source ref="id3"/>
+			<target ref="id0"/>
+			<label kind="assignment" x="-1054" y="-1844">msgDelay[id]:=msgDelayInjected,
+                                                  t:=0</label>
+			<label kind="probability" x="-952" y="-1861">transmissionDelay</label>
+			<nail x="-799" y="-1861"/>
+			<nail x="-1122" y="-1861"/>
+		</transition>
+	</template>
+	<template>
+		<name>Communication_System</name>
+		<declaration>
+clock t;
+
+</declaration>
+		<location id="id4" x="-578" y="-374">
+			<name x="-629" y="-374">Wait</name>
+			<label kind="exponentialrate" x="-765" y="-391">commSystemCheckRate</label>
+		</location>
+		<location id="id5" x="-578" y="-459">
+			<name x="-612" y="-493">ConnRelease</name>
+			<committed/>
+		</location>
+		<branchpoint id="id6" x="-238" y="-374">
+		</branchpoint>
+		<init ref="id4"/>
+		<transition>
+			<source ref="id5"/>
+			<target ref="id4"/>
+			<label kind="synchronisation" x="-569" y="-442">tau_CommSystem_fault!</label>
+			<label kind="assignment" x="-569" y="-425">t:=0</label>
+		</transition>
+		<transition>
+			<source ref="id6"/>
+			<target ref="id4"/>
+			<label kind="assignment" x="-306" y="-297">t:=0</label>
+			<label kind="probability" x="-306" y="-314">safeConn</label>
+			<nail x="-238" y="-314"/>
+			<nail x="-578" y="-314"/>
+		</transition>
+		<transition>
+			<source ref="id6"/>
+			<target ref="id5"/>
+			<label kind="probability" x="-399" y="-476">disruptiveConnRelease</label>
+			<nail x="-238" y="-459"/>
+		</transition>
+		<transition>
+			<source ref="id4"/>
+			<target ref="id6"/>
+			<label kind="guard" x="-544" y="-374">t &gt;=T_commSystemCheck_min &amp;&amp;
+allSAIConnected()</label>
+		</transition>
+	</template>
+	<template>
+		<name>Euroradio_SL_Env</name>
+		<parameter>const id_t SAI_id, const id_t receiver</parameter>
+		<declaration>// Place local declarations here.
+
+sig_t sig:=empty_sig;
+
+void enqueueSignalQueue(int id)
+{
+    int i;
+    for (i:=0;i&lt;queue_size-1;i++)
+    {    
+        sig_queue[id][i]:=sig_queue[id][i+1];
+    }
+    sig_queue[id][queue_size-1]:=sig;
+}
+
+sig_t dequeueSignalQueue(id_t SAI_id)
+{
+    int i;
+    sig_t tmp;
+    for (i:=0;i&lt;queue_size;i++)
+    {    
+        if (sig_queue[SAI_id][i]!=empty_sig)
+        {
+            tmp:=sig_queue[SAI_id][i];
+			sig_queue[SAI_id][i]:=empty_sig;
+            return tmp;
+        }
+    }
+    return empty_sig;
+}
+
+
+</declaration>
+		<location id="id7" x="-1946" y="-1283">
+			<name x="-1929" y="-1309">Wait</name>
+			<label kind="invariant" x="-1929" y="-1326">sig_out==empty_sig</label>
+			<label kind="exponentialrate" x="-1929" y="-1343">msgDelay[SAI_id]</label>
+		</location>
+		<location id="id8" x="-1657" y="-1411">
+			<name x="-1708" y="-1445">EuroradioFailure</name>
+			<committed/>
+		</location>
+		<location id="id9" x="-1470" y="-1215">
+			<name x="-1462" y="-1241">CheckDelivery</name>
+			<committed/>
+		</location>
+		<location id="id10" x="-2303" y="-1283">
+			<name x="-2371" y="-1266">CheckIncomingSig</name>
+			<committed/>
+		</location>
+		<branchpoint id="id11" x="-1470" y="-1411">
+		</branchpoint>
+		<init ref="id7"/>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id7"/>
+			<label kind="guard" x="-2278" y="-1598">sig.sig_id==SIG_Sa_DATA_indication</label>
+			<label kind="synchronisation" x="-2278" y="-1581">Sa_DATA_indication[SAI_id]!</label>
+			<label kind="assignment" x="-2278" y="-1564">sig_out:=sig, 
+sig:=empty_sig</label>
+			<nail x="-2303" y="-1598"/>
+			<nail x="-1946" y="-1598"/>
+		</transition>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id7"/>
+			<label kind="guard" x="-2278" y="-1513">sig.sig_id==SIG_Sa_DISCONNECT_indication</label>
+			<label kind="synchronisation" x="-2278" y="-1496">Sa_DISCONNECT_indication[SAI_id]!</label>
+			<nail x="-2303" y="-1513"/>
+			<nail x="-1946" y="-1513"/>
+		</transition>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id7"/>
+			<label kind="guard" x="-2278" y="-1436">sig.sig_id==SIG_Sa_CONNECT_confirm</label>
+			<label kind="synchronisation" x="-2278" y="-1419">Sa_CONNECT_confirm[SAI_id]!</label>
+			<nail x="-2303" y="-1436"/>
+			<nail x="-1946" y="-1437"/>
+		</transition>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id7"/>
+			<label kind="guard" x="-2278" y="-1368">sig.sig_id==SIG_Sa_CONNECT_indication</label>
+			<label kind="synchronisation" x="-2278" y="-1351">Sa_CONNECT_indication[SAI_id]!</label>
+			<nail x="-2303" y="-1368"/>
+			<nail x="-1946" y="-1368"/>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id10"/>
+			<label kind="guard" x="-2142" y="-1283">!isQueueEmpty(SAI_id)</label>
+			<label kind="assignment" x="-2218" y="-1266">sig:=dequeueSignalQueue(SAI_id)</label>
+		</transition>
+		<transition>
+			<source ref="id9"/>
+			<target ref="id11"/>
+			<label kind="guard" x="-1462" y="-1368">!isQueueFull(receiver) &amp;&amp; (
+isConnected[receiver] ||
+isTTSInitializing ||
+sig.sig_id==SIG_Sa_CONNECT_indication ||
+sig.sig_id==SIG_Sa_CONNECT_confirm)</label>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id8"/>
+			<label kind="synchronisation" x="-1912" y="-1283">tau_CommSystem_fault?</label>
+			<nail x="-1657" y="-1283"/>
+		</transition>
+		<transition>
+			<source ref="id11"/>
+			<target ref="id8"/>
+			<label kind="assignment" x="-1606" y="-1394">sig:=empty_sig</label>
+			<label kind="probability" x="-1606" y="-1411">euroradioFailure</label>
+		</transition>
+		<transition>
+			<source ref="id11"/>
+			<target ref="id7"/>
+			<label kind="assignment" x="-1461" y="-1479">enqueueSignalQueue(receiver),
+sig:=empty_sig</label>
+			<label kind="probability" x="-1462" y="-1445">noEuroradioFailure</label>
+			<nail x="-1470" y="-1496"/>
+			<nail x="-1946" y="-1496"/>
+		</transition>
+		<transition>
+			<source ref="id8"/>
+			<target ref="id7"/>
+			<label kind="synchronisation" x="-1921" y="-1411">Sa_DISCONNECT_indication[SAI_id]!</label>
+			<nail x="-1946" y="-1411"/>
+		</transition>
+		<transition>
+			<source ref="id9"/>
+			<target ref="id7"/>
+			<label kind="guard" x="-1419" y="-1215">!(!isQueueFull(receiver) &amp;&amp; (
+isConnected[receiver] ||
+isTTSInitializing ||
+sig.sig_id==SIG_Sa_CONNECT_indication ||
+sig.sig_id==SIG_Sa_CONNECT_confirm))</label>
+			<label kind="assignment" x="-1419" y="-1130">sig:=empty_sig</label>
+			<nail x="-1071" y="-1215"/>
+			<nail x="-1071" y="-1564"/>
+			<nail x="-1946" y="-1564"/>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="-1912" y="-961">Sa_DATA_request[SAI_id]?</label>
+			<label kind="assignment" x="-1912" y="-943">sig:=sig_out, 
+sig_out:=empty_sig,
+sig.sig_id:=SIG_Sa_DATA_indication</label>
+			<nail x="-1946" y="-961"/>
+			<nail x="-1470" y="-960"/>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="-1912" y="-1046">Sa_DISCONNECT_request[SAI_id]?</label>
+			<label kind="assignment" x="-1912" y="-1029">sig:=sig_out, 
+sig_out:=empty_sig,
+sig.sig_id:=SIG_Sa_DISCONNECT_indication</label>
+			<nail x="-1946" y="-1046"/>
+			<nail x="-1470" y="-1046"/>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="-1912" y="-1130">Sa_CONNECT_response[SAI_id]?</label>
+			<label kind="assignment" x="-1912" y="-1113">sig:=sig_out, 
+sig_out:=empty_sig,
+sig.sig_id:=SIG_Sa_CONNECT_confirm</label>
+			<nail x="-1946" y="-1130"/>
+			<nail x="-1470" y="-1130"/>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="-1912" y="-1215">Sa_CONNECT_request[SAI_id]?</label>
+			<label kind="assignment" x="-1912" y="-1198">sig:=sig_out, 
+sig_out:=empty_sig,
+sig.sig_id:=SIG_Sa_CONNECT_indication</label>
+			<nail x="-1946" y="-1215"/>
+		</transition>
+	</template>
+	<template>
+		<name>SAI_Conn_Ini</name>
+		<parameter>const id_t id</parameter>
+		<declaration>
+sig_t sig:=empty_sig;</declaration>
+		<location id="id12" x="-25" y="-17">
+			<name x="-8" y="-17">WaitTTSAnswer</name>
+			<label kind="invariant" x="-8" y="-34">sig_out==empty_sig</label>
+		</location>
+		<location id="id13" x="-986" y="-17">
+			<name x="-1105" y="-25">Disconnected</name>
+		</location>
+		<location id="id14" x="-603" y="-17">
+			<name x="-773" y="-42">SendConnRequestSig</name>
+			<committed/>
+		</location>
+		<location id="id15" x="-289" y="-17">
+			<name x="-442" y="-42">WaitConnConfirmSig</name>
+			<label kind="invariant" x="-450" y="-59">sig_out==empty_sig</label>
+		</location>
+		<location id="id16" x="-603" y="110">
+			<name x="-671" y="127">DisconnectIndication</name>
+			<committed/>
+		</location>
+		<location id="id17" x="-25" y="-187">
+			<name x="-8" y="-195">Connected</name>
+			<label kind="invariant" x="-8" y="-212">sig_out==empty_sig</label>
+		</location>
+		<init ref="id13"/>
+		<transition>
+			<source ref="id17"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-305" y="-246">SAI_DISCONNECT_request[id]?</label>
+			<nail x="-25" y="-246"/>
+			<nail x="-986" y="-246"/>
+		</transition>
+		<transition>
+			<source ref="id17"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-305" y="-187">SAI_DISCONNECT_indication[id]?</label>
+			<nail x="-986" y="-187"/>
+		</transition>
+		<transition>
+			<source ref="id12"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-17" y="68">SAI_DISCONNECT_indication[id]?</label>
+			<label kind="assignment" x="-17" y="85">isTTSInitializing:=false</label>
+			<nail x="-25" y="195"/>
+			<nail x="-986" y="195"/>
+		</transition>
+		<transition>
+			<source ref="id12"/>
+			<target ref="id17"/>
+			<label kind="synchronisation" x="-17" y="-119">SAI_CONNECT_confirm[id]?</label>
+			<label kind="assignment" x="-17" y="-102">isTTSInitializing:=false</label>
+		</transition>
+		<transition>
+			<source ref="id15"/>
+			<target ref="id14"/>
+			<label kind="synchronisation" x="-484" y="-136">SAI_CONNECT_request[id]?</label>
+			<label kind="assignment" x="-586" y="-119">prepareSig(sig,SIG_Sa_CONNECT_request)</label>
+			<nail x="-289" y="-102"/>
+			<nail x="-603" y="-102"/>
+		</transition>
+		<transition>
+			<source ref="id15"/>
+			<target ref="id16"/>
+			<label kind="synchronisation" x="-510" y="93">Sa_DISCONNECT_indication[id]?</label>
+			<nail x="-289" y="110"/>
+		</transition>
+		<transition>
+			<source ref="id14"/>
+			<target ref="id15"/>
+			<label kind="synchronisation" x="-578" y="-17">Sa_CONNECT_request[id]!</label>
+			<label kind="assignment" x="-578" y="0">sig_out:=sig,
+sig:=empty_sig</label>
+		</transition>
+		<transition>
+			<source ref="id13"/>
+			<target ref="id14"/>
+			<label kind="synchronisation" x="-952" y="-17">SAI_CONNECT_request[id]?</label>
+			<label kind="assignment" x="-952" y="0">prepareSig(sig,SIG_Sa_CONNECT_request)</label>
+		</transition>
+		<transition>
+			<source ref="id15"/>
+			<target ref="id12"/>
+			<label kind="synchronisation" x="-255" y="-17">Sa_CONNECT_confirm[id]?</label>
+			<label kind="assignment" x="-255" y="0">isTTSInitializing:=true</label>
+		</transition>
+		<transition>
+			<source ref="id16"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-858" y="93">SAI_DISCONNECT_indication[id]!</label>
+			<nail x="-986" y="110"/>
+		</transition>
+	</template>
+	<template>
+		<name>SAI_Conn_Res</name>
+		<parameter>const id_t id</parameter>
+		<declaration>
+sig_t sig:=empty_sig;</declaration>
+		<location id="id18" x="-1598" y="85">
+			<name x="-1573" y="85">WaitTTSAnswer</name>
+			<label kind="invariant" x="-1573" y="68">sig_out==empty_sig</label>
+		</location>
+		<location id="id19" x="-2159" y="85">
+			<name x="-2269" y="51">Disconnected</name>
+		</location>
+		<location id="id20" x="-1895" y="85">
+			<name x="-1972" y="51">SendConnResponseSig</name>
+			<committed/>
+		</location>
+		<location id="id21" x="-1598" y="-76">
+			<name x="-1581" y="-85">Connected</name>
+			<label kind="invariant" x="-1581" y="-102">sig_out==empty_sig</label>
+		</location>
+		<init ref="id19"/>
+		<transition>
+			<source ref="id19"/>
+			<target ref="id19"/>
+			<label kind="synchronisation" x="-2346" y="85">Sa_DATA_indication[id]?</label>
+			<label kind="assignment" x="-2346" y="102">sig_out:=empty_sig</label>
+			<nail x="-2193" y="85"/>
+			<nail x="-2354" y="85"/>
+			<nail x="-2354" y="221"/>
+			<nail x="-2159" y="221"/>
+		</transition>
+		<transition>
+			<source ref="id21"/>
+			<target ref="id19"/>
+			<label kind="synchronisation" x="-1861" y="-153">SAI_DISCONNECT_request[id]?</label>
+			<nail x="-1598" y="-153"/>
+			<nail x="-2159" y="-153"/>
+		</transition>
+		<transition>
+			<source ref="id21"/>
+			<target ref="id19"/>
+			<label kind="synchronisation" x="-1861" y="-76">SAI_DISCONNECT_indication[id]?</label>
+			<nail x="-2159" y="-76"/>
+		</transition>
+		<transition>
+			<source ref="id18"/>
+			<target ref="id21"/>
+			<label kind="synchronisation" x="-1589" y="-17">SAI_CONNECT_response[id]?</label>
+		</transition>
+		<transition>
+			<source ref="id18"/>
+			<target ref="id19"/>
+			<label kind="synchronisation" x="-1589" y="144">SAI_DISCONNECT_indication[id]?</label>
+			<nail x="-1598" y="221"/>
+			<nail x="-2159" y="221"/>
+		</transition>
+		<transition>
+			<source ref="id20"/>
+			<target ref="id18"/>
+			<label kind="synchronisation" x="-1861" y="85">Sa_CONNECT_response[id]!</label>
+			<label kind="assignment" x="-1861" y="102">sig_out:=sig,
+sig:=empty_sig</label>
+		</transition>
+		<transition>
+			<source ref="id19"/>
+			<target ref="id20"/>
+			<label kind="synchronisation" x="-2133" y="85">Sa_CONNECT_indication[id]?</label>
+		</transition>
+	</template>
+	<template>
+		<name>SAI_TTS_Init_Ini</name>
+		<parameter>const id_t id</parameter>
+		<declaration>
+clock t;        //timer for TTS answer wait
+
+sig_t sig:=empty_sig;
+int last_mtf:=0;
+int TTS_check:=0;
+
+
+</declaration>
+		<location id="id22" x="-1207" y="51">
+			<name x="-1241" y="68">StartTTSInit</name>
+			<committed/>
+		</location>
+		<location id="id23" x="-816" y="51">
+			<name x="-799" y="26">WaitAnswer</name>
+			<label kind="invariant" x="-799" y="-8">t &lt;=T_start_max[id] &amp;&amp;
+sig_out==empty_sig</label>
+		</location>
+		<location id="id24" x="-816" y="-246">
+			<name x="-807" y="-238">CheckMsg</name>
+			<committed/>
+		</location>
+		<location id="id25" x="-1130" y="-586">
+			<name x="-1156" y="-620">TTSCheck</name>
+			<committed/>
+		</location>
+		<location id="id26" x="-1632" y="51">
+			<name x="-1751" y="42">Disconnected</name>
+		</location>
+		<location id="id27" x="-535" y="102">
+			<name x="-518" y="93">ConnectionFailure</name>
+			<committed/>
+		</location>
+		<location id="id28" x="-1130" y="-59">
+			<name x="-1232" y="-42">DisconnectIndication</name>
+			<committed/>
+		</location>
+		<location id="id29" x="-1377" y="-586">
+			<name x="-1368" y="-612">Connected</name>
+			<label kind="invariant" x="-1368" y="-629">sig_out==empty_sig</label>
+		</location>
+		<init ref="id26"/>
+		<transition>
+			<source ref="id27"/>
+			<target ref="id26"/>
+			<label kind="synchronisation" x="-527" y="136">SAI_DISCONNECT_indication[id]!</label>
+			<label kind="assignment" x="-527" y="153">resetParams(id),
+last_mtf:=0</label>
+			<nail x="-535" y="212"/>
+			<nail x="-1632" y="212"/>
+		</transition>
+		<transition>
+			<source ref="id29"/>
+			<target ref="id26"/>
+			<label kind="synchronisation" x="-1615" y="-637">SAI_DISCONNECT_request[id]?</label>
+			<nail x="-1377" y="-637"/>
+			<nail x="-1632" y="-637"/>
+		</transition>
+		<transition>
+			<source ref="id29"/>
+			<target ref="id26"/>
+			<label kind="synchronisation" x="-1623" y="-586">SAI_DISCONNECT_indication[id]?</label>
+			<nail x="-1632" y="-586"/>
+		</transition>
+		<transition>
+			<source ref="id23"/>
+			<target ref="id27"/>
+			<label kind="synchronisation" x="-782" y="85">SAI_CONNECT_request[id]?</label>
+			<nail x="-816" y="102"/>
+		</transition>
+		<transition>
+			<source ref="id24"/>
+			<target ref="id26"/>
+			<label kind="guard" x="-1071" y="-246">!(last_mtf==0 &amp;&amp;
+sig.msg.mtf==O_Answ1) &amp;&amp;
+!(last_mtf==O_Answ1 &amp;&amp;
+sig.msg.mtf==O_Est &amp;&amp;
+sig.msg.sn==last_sn[id]+1)</label>
+			<label kind="synchronisation" x="-1071" y="-161">SAI_DISCONNECT_indication[id]!</label>
+			<label kind="assignment" x="-1071" y="-144">sig:=empty_sig,
+resetParams(id),
+last_mtf:=0</label>
+			<nail x="-1632" y="-246"/>
+		</transition>
+		<transition>
+			<source ref="id25"/>
+			<target ref="id28"/>
+			<label kind="synchronisation" x="-1122" y="-442">Sa_DISCONNECT_indication[id]?</label>
+			<label kind="assignment" x="-1122" y="-425">TTS_check:=0,
+resetParams(id)</label>
+		</transition>
+		<transition>
+			<source ref="id25"/>
+			<target ref="id26"/>
+			<label kind="guard" x="-1283" y="-518">TTS_check==0</label>
+			<label kind="synchronisation" x="-1394" y="-501">SAI_DISCONNECT_indication[id]!</label>
+			<label kind="assignment" x="-1283" y="-484">resetParams(id)</label>
+			<nail x="-1130" y="-518"/>
+			<nail x="-1632" y="-518"/>
+		</transition>
+		<transition>
+			<source ref="id25"/>
+			<target ref="id29"/>
+			<label kind="guard" x="-1283" y="-586">TTS_check==1</label>
+			<label kind="synchronisation" x="-1351" y="-569">SAI_CONNECT_confirm[id]!</label>
+			<label kind="assignment" x="-1275" y="-552">TTS_check:=0</label>
+		</transition>
+		<transition>
+			<source ref="id23"/>
+			<target ref="id28"/>
+			<label kind="synchronisation" x="-1071" y="-59">Sa_DISCONNECT_indication[id]?</label>
+			<label kind="assignment" x="-1071" y="-42">resetParams(id),
+last_mtf:=0</label>
+			<nail x="-816" y="-59"/>
+		</transition>
+		<transition>
+			<source ref="id23"/>
+			<target ref="id26"/>
+			<label kind="guard" x="-807" y="127">t &gt;=T_start_max[id]</label>
+			<label kind="synchronisation" x="-807" y="144">SAI_DISCONNECT_indication[id]!</label>
+			<label kind="assignment" x="-807" y="161">resetParams(id),
+last_mtf:=0</label>
+			<nail x="-816" y="212"/>
+			<nail x="-1632" y="212"/>
+		</transition>
+		<transition>
+			<source ref="id24"/>
+			<target ref="id25"/>
+			<label kind="guard" x="-807" y="-586">last_mtf==O_Answ1 &amp;&amp; 
+sig.msg.mtf==O_Est &amp;&amp; 
+sig.msg.sn==last_sn[id]+1</label>
+			<label kind="synchronisation" x="-808" y="-535">Sa_DATA_request[id]!</label>
+			<label kind="assignment" x="-808" y="-518">last_sn[id]:=sig.msg.sn,
+TTS_check:=(abs(T_offset_max[id]+sig.msg.user_data.min_offset)==0 &amp;&amp; 
+                      abs(T_offset_min[id]+sig.msg.user_data.max_offset)&lt;T_off_max),
+sn[id]:=(sn[id]&lt;SN_max)?++sn[id]:0,
+prepareTTSSig(sig,
+                        SIG_Sa_DATA_request,
+                        O_End,
+                        sn[id],
+                        fint(SAI_clock[id]),
+                        last_received_ts[id],
+                        last_msg_ts[id]),
+sig.msg.user_data.check_field:=TTS_check,
+sig_out:=sig,
+sig:=empty_sig,
+last_mtf:=0</label>
+			<nail x="-816" y="-586"/>
+		</transition>
+		<transition>
+			<source ref="id24"/>
+			<target ref="id23"/>
+			<label kind="guard" x="-544" y="-238">last_mtf==0 &amp;&amp; 
+sig.msg.mtf==O_Answ1</label>
+			<label kind="synchronisation" x="-544" y="-204">Sa_DATA_request[id]!</label>
+			<label kind="assignment" x="-544" y="-187">last_sn[id]:=sig.msg.sn,
+last_mtf:=sig.msg.mtf,
+computeMinMaxOffsets(id,sig),
+sn[id]:=(sn[id]&lt;SN_max)?++sn[id]:0,
+prepareTTSSig(sig,
+                        SIG_Sa_DATA_request,
+                        O_Answ2,
+                        sn[id],
+                        fint(SAI_clock[id]),
+                        last_received_ts[id],
+                        last_msg_ts[id]),
+sig_out:=sig,
+sig:=empty_sig,
+t:=0</label>
+			<nail x="-552" y="-246"/>
+			<nail x="-552" y="51"/>
+		</transition>
+		<transition>
+			<source ref="id23"/>
+			<target ref="id24"/>
+			<label kind="guard" x="-808" y="-178">t &lt;=T_start_max[id]</label>
+			<label kind="synchronisation" x="-808" y="-161">Sa_DATA_indication[id]?</label>
+			<label kind="assignment" x="-808" y="-144">sig:=sig_out,
+sig_out:=empty_sig,
+last_received_ts[id]:=sig.msg.s_ts,
+last_msg_ts[id]:=fint(SAI_clock[id])</label>
+		</transition>
+		<transition>
+			<source ref="id22"/>
+			<target ref="id23"/>
+			<label kind="synchronisation" x="-1122" y="51">Sa_DATA_request[id]!</label>
+			<label kind="assignment" x="-1122" y="68">sig_out:=sig,
+sig:=empty_sig,
+t:=0</label>
+		</transition>
+		<transition>
+			<source ref="id26"/>
+			<target ref="id22"/>
+			<label kind="synchronisation" x="-1589" y="51">Sa_CONNECT_confirm[id]?</label>
+			<label kind="assignment" x="-1589" y="68">sn[id]:=(sn[id]&lt;SN_max)?++sn[id]:0,
+prepareTTSSig(sig,
+                        SIG_Sa_DATA_request,
+                        O_Start,
+                        sn[id],
+                        fint(SAI_clock[id]),
+                        0,
+                        0)</label>
+		</transition>
+		<transition>
+			<source ref="id28"/>
+			<target ref="id26"/>
+			<label kind="synchronisation" x="-1496" y="-59">SAI_DISCONNECT_indication[id]!</label>
+			<nail x="-1632" y="-59"/>
+		</transition>
+	</template>
+	<template>
+		<name>SAI_TTS_Init_Res</name>
+		<parameter>const id_t id</parameter>
+		<declaration>
+clock t;        //timer for TTS answer wait
+
+sig_t sig:=empty_sig;
+int last_mtf:=0;
+
+
+</declaration>
+		<location id="id30" x="-1496" y="595">
+			<name x="-1666" y="603">WaitTTSOffsetStartMsg</name>
+			<label kind="invariant" x="-1657" y="620">sig_out==empty_sig</label>
+		</location>
+		<location id="id31" x="-1496" y="433">
+			<name x="-1564" y="399">CheckOffsetStartMsg</name>
+			<committed/>
+		</location>
+		<location id="id32" x="-918" y="433">
+			<name x="-901" y="408">WaitAnswer</name>
+			<label kind="invariant" x="-901" y="374">t &lt;=T_start_max[id] &amp;&amp;
+sig_out==empty_sig</label>
+		</location>
+		<location id="id33" x="-918" y="93">
+			<name x="-910" y="68">CheckOffsetMsg</name>
+			<committed/>
+		</location>
+		<location id="id34" x="-1819" y="595">
+			<name x="-1938" y="586">Disconnected</name>
+		</location>
+		<location id="id35" x="-1496" y="722">
+			<name x="-1564" y="739">DisconnectIndication</name>
+			<committed/>
+		</location>
+		<location id="id36" x="-1241" y="-68">
+			<name x="-1317" y="-102">WaitConnResponseSig</name>
+		</location>
+		<location id="id37" x="-1538" y="-68">
+			<name x="-1572" y="-52">Connected</name>
+			<label kind="invariant" x="-1606" y="-34">sig_out==empty_sig</label>
+		</location>
+		<init ref="id34"/>
+		<transition>
+			<source ref="id30"/>
+			<target ref="id35"/>
+			<label kind="synchronisation" x="-1462" y="595">Sa_CONNECT_indication[id]?</label>
+			<nail x="-1241" y="595"/>
+			<nail x="-1241" y="722"/>
+		</transition>
+		<transition>
+			<source ref="id37"/>
+			<target ref="id34"/>
+			<label kind="synchronisation" x="-1793" y="-110">SAI_DISCONNECT_request[id]?</label>
+			<nail x="-1538" y="-110"/>
+			<nail x="-1819" y="-110"/>
+		</transition>
+		<transition>
+			<source ref="id37"/>
+			<target ref="id34"/>
+			<label kind="synchronisation" x="-1802" y="-68">SAI_DISCONNECT_indication[id]?</label>
+			<nail x="-1819" y="-68"/>
+		</transition>
+		<transition>
+			<source ref="id30"/>
+			<target ref="id35"/>
+			<label kind="synchronisation" x="-1487" y="654">Sa_DISCONNECT_indication[id]?</label>
+		</transition>
+		<transition>
+			<source ref="id33"/>
+			<target ref="id34"/>
+			<label kind="guard" x="-1190" y="93">!(last_mtf==O_Start &amp;&amp;
+sig.msg.mtf==O_Answ2 &amp;&amp;
+sig.msg.sn==last_sn[id]+1) &amp;&amp;
+!(last_mtf==O_Answ2 &amp;&amp;
+sig.msg.mtf==O_End &amp;&amp;
+sig.msg.sn==last_sn[id]+1 &amp;&amp;
+sig.msg.user_data.check_field==1)</label>
+			<label kind="synchronisation" x="-1190" y="212">SAI_DISCONNECT_indication[id]!</label>
+			<label kind="assignment" x="-1190" y="229">sig:=empty_sig,
+resetParams(id),
+last_mtf:=0</label>
+			<nail x="-1819" y="93"/>
+		</transition>
+		<transition>
+			<source ref="id31"/>
+			<target ref="id34"/>
+			<label kind="guard" x="-1759" y="433">!(last_mtf==0 &amp;&amp;
+sig.msg.mtf==O_Start)</label>
+			<label kind="synchronisation" x="-1759" y="467">SAI_DISCONNECT_indication[id]!</label>
+			<label kind="assignment" x="-1759" y="484">sig:=empty_sig,
+resetParams(id)</label>
+			<nail x="-1819" y="433"/>
+		</transition>
+		<transition>
+			<source ref="id32"/>
+			<target ref="id35"/>
+			<label kind="synchronisation" x="-910" y="476">Sa_DISCONNECT_indication[id]?</label>
+			<label kind="assignment" x="-910" y="493">resetParams(id),
+last_mtf:=0</label>
+			<nail x="-918" y="722"/>
+		</transition>
+		<transition>
+			<source ref="id32"/>
+			<target ref="id34"/>
+			<label kind="guard" x="-1165" y="314">t &gt;=T_start_max[id]</label>
+			<label kind="synchronisation" x="-1165" y="331">SAI_DISCONNECT_indication[id]!</label>
+			<label kind="assignment" x="-1165" y="348">resetParams(id),
+last_mtf:=0</label>
+			<nail x="-918" y="314"/>
+			<nail x="-1819" y="314"/>
+		</transition>
+		<transition>
+			<source ref="id33"/>
+			<target ref="id36"/>
+			<label kind="guard" x="-1190" y="-68">last_mtf==O_Answ2 &amp;&amp;
+sig.msg.mtf==O_End &amp;&amp;
+sig.msg.sn==last_sn[id]+1 &amp;&amp;
+sig.msg.user_data.check_field==1</label>
+			<label kind="synchronisation" x="-1190" y="0">SAI_CONNECT_indication[id]!</label>
+			<label kind="assignment" x="-1190" y="17">last_sn[id]:=sig.msg.sn,
+sig:=empty_sig,
+last_mtf:=0</label>
+			<nail x="-918" y="-68"/>
+		</transition>
+		<transition>
+			<source ref="id33"/>
+			<target ref="id32"/>
+			<label kind="guard" x="-646" y="93">last_mtf==O_Start &amp;&amp;
+sig.msg.mtf==O_Answ2 &amp;&amp;
+sig.msg.sn==last_sn[id]+1</label>
+			<label kind="synchronisation" x="-646" y="144">Sa_DATA_request[id]!</label>
+			<label kind="assignment" x="-646" y="161">last_sn[id]:=sig.msg.sn,
+last_mtf:=sig.msg.mtf,
+computeMinMaxOffsets(id,sig),
+sn[id]:=(sn[id]&lt;SN_max)?++sn[id]:0,
+prepareTTSSig(sig,
+                           SIG_Sa_DATA_request,
+                           O_Est,
+                           sn[id],
+                           fint(SAI_clock[id]),
+                           last_received_ts[id],
+                           last_msg_ts[id]),
+sig.msg.user_data.min_offset:=T_offset_min[id],
+sig.msg.user_data.max_offset:=T_offset_max[id],
+sig_out:=sig,
+sig:=empty_sig,
+t:=0</label>
+			<nail x="-655" y="93"/>
+			<nail x="-655" y="433"/>
+		</transition>
+		<transition>
+			<source ref="id32"/>
+			<target ref="id33"/>
+			<label kind="guard" x="-910" y="187">t &lt;=T_start_max[id]</label>
+			<label kind="synchronisation" x="-910" y="204">Sa_DATA_indication[id]?</label>
+			<label kind="assignment" x="-910" y="221">sig:=sig_out,
+sig_out:=empty_sig,
+last_received_ts[id]:=sig.msg.s_ts,
+last_msg_ts[id]:=fint(SAI_clock[id])</label>
+		</transition>
+		<transition>
+			<source ref="id31"/>
+			<target ref="id32"/>
+			<label kind="guard" x="-1198" y="433">last_mtf==0 &amp;&amp;
+sig.msg.mtf==O_Start</label>
+			<label kind="synchronisation" x="-1198" y="467">Sa_DATA_request[id]!</label>
+			<label kind="assignment" x="-1198" y="484">last_sn[id]:=sig.msg.sn,
+last_mtf:=sig.msg.mtf,
+sn[id]:=(sn[id]&lt;SN_max)?++sn[id]:0,
+prepareTTSSig(sig,
+                           SIG_Sa_DATA_request,
+                           O_Answ1,
+                           sn[id],
+                           fint(SAI_clock[id]),
+                           last_received_ts[id],
+                           last_msg_ts[id]),
+sig_out:=sig,
+sig:=empty_sig,
+t:=0</label>
+		</transition>
+		<transition>
+			<source ref="id30"/>
+			<target ref="id31"/>
+			<label kind="synchronisation" x="-1487" y="484">Sa_DATA_indication[id]?</label>
+			<label kind="assignment" x="-1487" y="501">sig:=sig_out,
+sig_out:=empty_sig,
+last_received_ts[id]:=sig.msg.s_ts,
+last_msg_ts[id]:=fint(SAI_clock[id])</label>
+		</transition>
+		<transition>
+			<source ref="id35"/>
+			<target ref="id34"/>
+			<label kind="synchronisation" x="-1751" y="705">SAI_DISCONNECT_indication[id]!</label>
+			<nail x="-1819" y="722"/>
+		</transition>
+		<transition>
+			<source ref="id34"/>
+			<target ref="id30"/>
+			<label kind="synchronisation" x="-1785" y="578">Sa_CONNECT_response[id]?</label>
+		</transition>
+		<transition>
+			<source ref="id36"/>
+			<target ref="id37"/>
+			<label kind="synchronisation" x="-1470" y="-68">SAI_CONNECT_response[id]?</label>
+		</transition>
+	</template>
+	<template>
+		<name>SAI_Sender</name>
+		<parameter>const id_t id, const bool initiator</parameter>
+		<declaration>// Place local declarations here:
+
+sig_t sig:=empty_sig; 
+
+
+
+
+</declaration>
+		<location id="id38" x="680" y="612">
+			<name x="697" y="603">Disconnected</name>
+		</location>
+		<location id="id39" x="1037" y="612">
+			<name x="943" y="603">Connected</name>
+			<label kind="invariant" x="875" y="586">sig_out==empty_sig</label>
+		</location>
+		<location id="id40" x="1241" y="408">
+			<name x="1182" y="374">SendDataRequest</name>
+			<committed/>
+		</location>
+		<location id="id41" x="1037" y="799">
+			<name x="977" y="816">SafeConnRelease</name>
+			<committed/>
+		</location>
+		<init ref="id38"/>
+		<transition>
+			<source ref="id39"/>
+			<target ref="id41"/>
+			<label kind="synchronisation" x="841" y="714">tau_safe_conn_release[id]?</label>
+			<label kind="assignment" x="714" y="731">prepareSig(sig,SIG_Sa_DISCONNECT_request)</label>
+		</transition>
+		<transition>
+			<source ref="id41"/>
+			<target ref="id38"/>
+			<label kind="synchronisation" x="705" y="799">Sa_DISCONNECT_request[id]!</label>
+			<label kind="assignment" x="705" y="816">sig_out:=sig,
+sig:=empty_sig,
+resetParams(id)</label>
+			<nail x="680" y="799"/>
+		</transition>
+		<transition>
+			<source ref="id39"/>
+			<target ref="id38"/>
+			<label kind="synchronisation" x="782" y="654">SAI_DISCONNECT_indication[id]?</label>
+			<nail x="1037" y="671"/>
+			<nail x="680" y="671"/>
+		</transition>
+		<transition>
+			<source ref="id38"/>
+			<target ref="id39"/>
+			<label kind="guard" x="705" y="527">!initiator</label>
+			<label kind="synchronisation" x="705" y="544">SAI_CONNECT_response[id]?</label>
+			<nail x="680" y="527"/>
+			<nail x="1037" y="527"/>
+		</transition>
+		<transition>
+			<source ref="id38"/>
+			<target ref="id39"/>
+			<label kind="guard" x="705" y="476">initiator</label>
+			<label kind="synchronisation" x="705" y="493">SAI_CONNECT_confirm[id]?</label>
+			<nail x="680" y="476"/>
+			<nail x="1037" y="476"/>
+		</transition>
+		<transition>
+			<source ref="id40"/>
+			<target ref="id39"/>
+			<label kind="synchronisation" x="1062" y="408">Sa_DATA_request[id]!</label>
+			<label kind="assignment" x="1062" y="425">sig_out:=sig,
+sig:=empty_sig</label>
+			<nail x="1037" y="408"/>
+		</transition>
+		<transition>
+			<source ref="id39"/>
+			<target ref="id41"/>
+			<label kind="synchronisation" x="1249" y="646">SAI_DISCONNECT_request[id]?</label>
+			<label kind="assignment" x="1249" y="663">prepareSig(sig,SIG_Sa_DISCONNECT_request)</label>
+			<nail x="1241" y="612"/>
+			<nail x="1241" y="799"/>
+		</transition>
+		<transition>
+			<source ref="id39"/>
+			<target ref="id40"/>
+			<label kind="synchronisation" x="1249" y="442">SAI_DATA_request[id]?</label>
+			<label kind="assignment" x="1250" y="459">sn[id]:=(sn[id]&lt;SN_max)?++sn[id]:0,
+prepareTTSSig(sig,
+                           SIG_Sa_DATA_request,
+                           App_Msg,
+                           sn[id],
+                           fint(SAI_clock[id]),
+                           last_received_ts[id],
+                           last_msg_ts[id])</label>
+			<nail x="1241" y="612"/>
+		</transition>
+	</template>
+	<template>
+		<name>SAI_Receiver</name>
+		<parameter>const id_t id, const bool initiator</parameter>
+		<declaration>// Place local declarations here:
+
+sig_t sig:=empty_sig; 
+
+int sn_diff:=0;                //diff between received msg.sn and last_sn
+int T_diff:=0;                 //diff between msg reception time by the receiver device and estimation of time transmission in terms of receiver clock
+int err_counter:=0;            //keeps track of sequencing succesive errors
+</declaration>
+		<location id="id42" x="663" y="425">
+			<name x="621" y="391">Disconnected</name>
+		</location>
+		<location id="id43" x="51" y="527">
+			<name x="-17" y="544">DisconnectIndication</name>
+			<committed/>
+		</location>
+		<location id="id44" x="416" y="612">
+			<name x="425" y="586">Connected</name>
+			<label kind="invariant" x="425" y="569">sig_out==empty_sig</label>
+		</location>
+		<location id="id45" x="416" y="850">
+			<name x="297" y="825">CheckDataMsg</name>
+			<committed/>
+		</location>
+		<location id="id46" x="416" y="1122">
+			<name x="399" y="1139">Error</name>
+			<committed/>
+		</location>
+		<location id="id47" x="110" y="850">
+			<name x="9" y="841">DiscardMsg</name>
+			<committed/>
+		</location>
+		<location id="id48" x="1020" y="765">
+			<name x="1037" y="782">ValidateMsg</name>
+			<committed/>
+		</location>
+		<location id="id49" x="935" y="850">
+			<name x="909" y="867">Correct</name>
+			<committed/>
+		</location>
+		<init ref="id42"/>
+		<transition>
+			<source ref="id44"/>
+			<target ref="id45"/>
+			<label kind="synchronisation" x="425" y="688">Sa_DATA_indication[id]?</label>
+			<label kind="assignment" x="425" y="705">sig:=sig_out,
+sig_out:=empty_sig,
+last_received_ts[id]:=sig.msg.s_ts,
+last_msg_ts[id]:=fint(SAI_clock[id]),
+sn_diff:=sig.msg.sn-last_sn[id],
+T_diff:=last_msg_ts[id]-(last_received_ts[id]-T_extra_delay+T_offset_min[id])</label>
+		</transition>
+		<transition>
+			<source ref="id44"/>
+			<target ref="id42"/>
+			<label kind="synchronisation" x="425" y="459">SAI_DISCONNECT_request[id]?</label>
+			<label kind="assignment" x="425" y="476">err_counter:=0</label>
+			<nail x="416" y="425"/>
+		</transition>
+		<transition>
+			<source ref="id48"/>
+			<target ref="id44"/>
+			<label kind="guard" x="1266" y="637">sig.msg.mtf==O_Answ1</label>
+			<label kind="synchronisation" x="1266" y="654">tau_offset_update_answer[id]!</label>
+			<label kind="assignment" x="1266" y="671">last_sn[id]:=sig.msg.sn,
+sn_diff:=0,
+T_diff:=0,
+sig_out:=sig,
+sig:=empty_sig</label>
+			<nail x="1258" y="765"/>
+			<nail x="1258" y="612"/>
+		</transition>
+		<transition>
+			<source ref="id48"/>
+			<target ref="id44"/>
+			<label kind="guard" x="1028" y="637">sig.msg.mtf==O_Start</label>
+			<label kind="synchronisation" x="1028" y="654">tau_offset_update_request[id]!</label>
+			<label kind="assignment" x="1028" y="671">last_sn[id]:=sig.msg.sn,
+sn_diff:=0,
+T_diff:=0,
+sig:=empty_sig</label>
+			<nail x="1020" y="612"/>
+		</transition>
+		<transition>
+			<source ref="id44"/>
+			<target ref="id43"/>
+			<label kind="synchronisation" x="178" y="527">Sa_DISCONNECT_indication[id]?</label>
+			<label kind="assignment" x="178" y="544">resetParams(id)</label>
+			<nail x="416" y="527"/>
+		</transition>
+		<transition>
+			<source ref="id43"/>
+			<target ref="id42"/>
+			<label kind="synchronisation" x="59" y="450">SAI_DISCONNECT_indication[id]!</label>
+			<label kind="assignment" x="59" y="467">err_counter:=0</label>
+			<nail x="51" y="425"/>
+		</transition>
+		<transition>
+			<source ref="id42"/>
+			<target ref="id44"/>
+			<label kind="guard" x="892" y="450">!initiator</label>
+			<label kind="synchronisation" x="892" y="467">SAI_CONNECT_response[id]?</label>
+			<nail x="884" y="425"/>
+			<nail x="884" y="612"/>
+		</transition>
+		<transition>
+			<source ref="id42"/>
+			<target ref="id44"/>
+			<label kind="guard" x="671" y="450">initiator</label>
+			<label kind="synchronisation" x="671" y="467">SAI_CONNECT_confirm[id]?</label>
+			<nail x="663" y="612"/>
+		</transition>
+		<transition>
+			<source ref="id49"/>
+			<target ref="id48"/>
+			<nail x="1020" y="850"/>
+		</transition>
+		<transition>
+			<source ref="id47"/>
+			<target ref="id44"/>
+			<label kind="assignment" x="119" y="773">sig:=empty_sig,
+sn_diff:=0,
+T_diff:=0</label>
+			<nail x="110" y="612"/>
+		</transition>
+		<transition>
+			<source ref="id48"/>
+			<target ref="id44"/>
+			<label kind="guard" x="833" y="637">sig.msg.mtf==App_Msg</label>
+			<label kind="assignment" x="833" y="654">last_sn[id]:=sig.msg.sn,
+sn_diff:=0,
+T_diff:=0,
+sig:=empty_sig</label>
+			<nail x="824" y="765"/>
+			<nail x="824" y="612"/>
+		</transition>
+		<transition>
+			<source ref="id45"/>
+			<target ref="id47"/>
+			<label kind="guard" x="238" y="850">sn_diff&lt;0</label>
+		</transition>
+		<transition>
+			<source ref="id46"/>
+			<target ref="id47"/>
+			<label kind="guard" x="119" y="994">err_counter&lt;N_max_succ_err[id] &amp;&amp;
+(sn_diff==0 || (
+sn_diff&lt;=N_max_lost_msg[id] &amp;&amp;
+sig.msg.mtf==App_Msg &amp;&amp; (
+T_diff&lt;0 || T_diff&gt;T_max[id])))</label>
+			<nail x="110" y="1122"/>
+		</transition>
+		<transition>
+			<source ref="id45"/>
+			<target ref="id46"/>
+			<label kind="guard" x="425" y="960">sn_diff&gt;=0  &amp;&amp;
+!(sn_diff==1 &amp;&amp; 
+((sig.msg.mtf==App_Msg &amp;&amp;
+T_diff&gt;=0 &amp;&amp; T_diff&lt;=T_max[id]) ||
+sig.msg.mtf==O_Start || 
+sig.msg.mtf==O_Answ1))</label>
+			<label kind="synchronisation" x="425" y="1062">tau_error_notification[id]!</label>
+			<label kind="assignment" x="425" y="1079">err_counter++</label>
+		</transition>
+		<transition>
+			<source ref="id46"/>
+			<target ref="id48"/>
+			<label kind="guard" x="756" y="977">err_counter&lt;N_max_succ_err[id] &amp;&amp;
+                                        sn_diff&gt;0 &amp;&amp; 
+     sn_diff&lt;=N_max_lost_msg[id] &amp;&amp;
+            ((sig.msg.mtf==App_Msg &amp;&amp;
+ T_diff&gt;=0 &amp;&amp; T_diff&lt;=T_max[id]) ||
+                     sig.msg.mtf==O_Start || 
+                   sig.msg.mtf==O_Answ1)</label>
+			<label kind="synchronisation" x="841" y="1096">SAI_DATA_indication[id]!</label>
+			<nail x="1020" y="1121"/>
+		</transition>
+		<transition>
+			<source ref="id45"/>
+			<target ref="id49"/>
+			<label kind="guard" x="561" y="850">sn_diff==1 &amp;&amp; 
+((sig.msg.mtf==App_Msg &amp;&amp;
+T_diff&gt;=0 &amp;&amp; T_diff&lt;=T_max[id]) ||
+sig.msg.mtf==O_Start || 
+sig.msg.mtf==O_Answ1)</label>
+			<label kind="synchronisation" x="561" y="935">SAI_DATA_indication[id]!</label>
+		</transition>
+		<transition>
+			<source ref="id46"/>
+			<target ref="id43"/>
+			<label kind="guard" x="-153" y="1003">sn_diff&gt;N_max_lost_msg[id] ||
+err_counter==N_max_succ_err[id]</label>
+			<label kind="synchronisation" x="-153" y="1037">tau_safe_conn_release[id]!</label>
+			<label kind="assignment" x="-153" y="1054">sig:=empty_sig,
+sn_diff:=0,
+T_diff:=0</label>
+			<nail x="-161" y="1122"/>
+			<nail x="-161" y="527"/>
+		</transition>
+	</template>
+	<template>
+		<name>SAI_Update_Req</name>
+		<parameter>const id_t id, const bool initiator</parameter>
+		<declaration>
+clock t;                       //timer for both offset update procedure and acceptable answer
+
+sig_t sig:=empty_sig;
+
+int offset_update_err:=0;      //error counter for offset update procedure
+int last_req_ts:=0;            //time stamp at last offset update request
+</declaration>
+		<location id="id50" x="-850" y="-459">
+			<name x="-833" y="-484">WaitAnswer</name>
+			<label kind="invariant" x="-833" y="-518">t &lt;=T_start_max[id] &amp;&amp;
+sig_out==empty_sig</label>
+		</location>
+		<location id="id51" x="-1224" y="-459">
+			<name x="-1215" y="-493">Connected</name>
+			<label kind="invariant" x="-1215" y="-527">t &lt;=offset_update_freq[id] &amp;&amp;
+sig_out==empty_sig</label>
+		</location>
+		<location id="id52" x="-1589" y="-467">
+			<name x="-1572" y="-475">Disconnected</name>
+		</location>
+		<location id="id53" x="-850" y="-646">
+			<name x="-901" y="-680">CheckAnswer</name>
+			<committed/>
+		</location>
+		<init ref="id52"/>
+		<transition>
+			<source ref="id50"/>
+			<target ref="id52"/>
+			<label kind="synchronisation" x="-1098" y="-110">SAI_DISCONNECT_request[id]?</label>
+			<label kind="assignment" x="-1098" y="-93">offset_update_err:=0,
+last_req_ts:=0</label>
+			<nail x="-851" y="-110"/>
+			<nail x="-1589" y="-110"/>
+		</transition>
+		<transition>
+			<source ref="id50"/>
+			<target ref="id52"/>
+			<label kind="synchronisation" x="-1097" y="-178">SAI_DISCONNECT_indication[id]?</label>
+			<label kind="assignment" x="-1098" y="-161">offset_update_err:=0,
+last_req_ts:=0</label>
+			<nail x="-851" y="-178"/>
+			<nail x="-1589" y="-178"/>
+		</transition>
+		<transition>
+			<source ref="id51"/>
+			<target ref="id52"/>
+			<label kind="synchronisation" x="-1496" y="-391">SAI_DISCONNECT_indication[id]?</label>
+			<label kind="assignment" x="-1496" y="-374">offset_update_err:=0,
+last_req_ts:=0</label>
+			<nail x="-1224" y="-391"/>
+			<nail x="-1589" y="-391"/>
+		</transition>
+		<transition>
+			<source ref="id51"/>
+			<target ref="id52"/>
+			<label kind="synchronisation" x="-1496" y="-323">SAI_DISCONNECT_request[id]?</label>
+			<label kind="assignment" x="-1496" y="-306">offset_update_err:=0,
+last_req_ts:=0</label>
+			<nail x="-1224" y="-323"/>
+			<nail x="-1589" y="-323"/>
+		</transition>
+		<transition>
+			<source ref="id52"/>
+			<target ref="id51"/>
+			<label kind="guard" x="-1555" y="-646">!initiator</label>
+			<label kind="synchronisation" x="-1555" y="-629">SAI_CONNECT_response[id]?</label>
+			<label kind="assignment" x="-1555" y="-612">t:=0</label>
+			<nail x="-1589" y="-646"/>
+			<nail x="-1224" y="-646"/>
+		</transition>
+		<transition>
+			<source ref="id53"/>
+			<target ref="id51"/>
+			<label kind="guard" x="-1131" y="-646">sig.msg.last_r_ts==last_req_ts</label>
+			<label kind="assignment" x="-1122" y="-629">computeMinMaxOffsets(id,sig),
+                       sig:=empty_sig,
+                         last_req_ts:=0,
+                                          t:=0</label>
+			<nail x="-1224" y="-646"/>
+		</transition>
+		<transition>
+			<source ref="id53"/>
+			<target ref="id50"/>
+			<label kind="guard" x="-799" y="-646">sig.msg.last_r_ts!=last_req_ts</label>
+			<label kind="assignment" x="-799" y="-629">sig:=empty_sig</label>
+			<nail x="-570" y="-646"/>
+			<nail x="-570" y="-459"/>
+		</transition>
+		<transition>
+			<source ref="id50"/>
+			<target ref="id53"/>
+			<label kind="synchronisation" x="-842" y="-586">tau_offset_update_answer[id]?</label>
+			<label kind="assignment" x="-842" y="-569">sig:=sig_out,
+sig_out:=empty_sig</label>
+		</transition>
+		<transition>
+			<source ref="id50"/>
+			<target ref="id50"/>
+			<label kind="guard" x="-799" y="-416">t &gt;=T_start_max[id]</label>
+			<label kind="synchronisation" x="-799" y="-399">Sa_DATA_request[id]!</label>
+			<label kind="assignment" x="-799" y="-382">offset_update_err++,
+sn[id]:=(sn[id]&lt;SN_max)?++sn[id]:0,
+last_req_ts:=fint(SAI_clock[id]),
+prepareTTSSig(sig,
+                           SIG_Sa_DATA_request,
+                           O_Start,
+                           sn[id],
+                           last_req_ts,
+                           last_received_ts[id],
+                           last_msg_ts[id]),
+sig_out:=sig,
+sig:=empty_sig,
+t:=0</label>
+			<nail x="-850" y="-416"/>
+			<nail x="-570" y="-416"/>
+			<nail x="-570" y="-459"/>
+		</transition>
+		<transition>
+			<source ref="id51"/>
+			<target ref="id50"/>
+			<label kind="guard" x="-1173" y="-459">t &gt;=offset_update_freq[id]</label>
+			<label kind="synchronisation" x="-1173" y="-442">Sa_DATA_request[id]!</label>
+			<label kind="assignment" x="-1173" y="-425">sn[id]:=(sn[id]&lt;SN_max)?++sn[id]:0,
+last_req_ts:=fint(SAI_clock[id]),
+prepareTTSSig(sig,
+                           SIG_Sa_DATA_request,
+                           O_Start,
+                           sn[id],
+                           last_req_ts,
+                           last_received_ts[id],
+                           last_msg_ts[id]),
+sig_out:=sig,
+sig:=empty_sig,
+t:=0</label>
+		</transition>
+		<transition>
+			<source ref="id52"/>
+			<target ref="id51"/>
+			<label kind="guard" x="-1555" y="-578">initiator</label>
+			<label kind="synchronisation" x="-1555" y="-561">SAI_CONNECT_confirm[id]?</label>
+			<label kind="assignment" x="-1555" y="-544">t:=0</label>
+			<nail x="-1589" y="-578"/>
+			<nail x="-1224" y="-578"/>
+		</transition>
+	</template>
+	<template>
+		<name>SAI_Update_Answ</name>
+		<parameter>const id_t id, const bool initiator</parameter>
+		<declaration>
+sig_t sig:=empty_sig;
+
+</declaration>
+		<location id="id54" x="-858" y="-229">
+			<name x="-952" y="-238">Connected</name>
+			<label kind="invariant" x="-1020" y="-255">sig_out==empty_sig</label>
+		</location>
+		<location id="id55" x="-1181" y="-229">
+			<name x="-1164" y="-238">Disconnected</name>
+		</location>
+		<location id="id56" x="-535" y="-229">
+			<name x="-518" y="-238">SendAnswer</name>
+			<committed/>
+		</location>
+		<init ref="id55"/>
+		<transition>
+			<source ref="id54"/>
+			<target ref="id55"/>
+			<label kind="synchronisation" x="-1097" y="-170">SAI_DISCONNECT_indication[id]?</label>
+			<nail x="-858" y="-153"/>
+			<nail x="-1181" y="-153"/>
+		</transition>
+		<transition>
+			<source ref="id54"/>
+			<target ref="id55"/>
+			<label kind="synchronisation" x="-1080" y="-127">SAI_DISCONNECT_request[id]?</label>
+			<nail x="-858" y="-110"/>
+			<nail x="-1181" y="-110"/>
+		</transition>
+		<transition>
+			<source ref="id55"/>
+			<target ref="id54"/>
+			<label kind="guard" x="-1164" y="-314">!initiator</label>
+			<label kind="synchronisation" x="-1164" y="-297">SAI_CONNECT_response[id]?</label>
+			<nail x="-1181" y="-314"/>
+			<nail x="-858" y="-314"/>
+		</transition>
+		<transition>
+			<source ref="id56"/>
+			<target ref="id54"/>
+			<label kind="synchronisation" x="-705" y="-314">Sa_DATA_request[id]!</label>
+			<label kind="assignment" x="-705" y="-297">sig_out:=sig,
+sig:=empty_sig</label>
+			<nail x="-535" y="-314"/>
+			<nail x="-858" y="-314"/>
+		</transition>
+		<transition>
+			<source ref="id54"/>
+			<target ref="id56"/>
+			<label kind="synchronisation" x="-816" y="-229">tau_offset_update_request[id]?</label>
+			<label kind="assignment" x="-816" y="-212">sn[id]:=(sn[id]&lt;SN_max)?++sn[id]:0,
+prepareTTSSig(sig,
+                           SIG_Sa_DATA_request,
+                           O_Answ1,
+                           sn[id],
+                           fint(SAI_clock[id]),
+                           last_received_ts[id],
+                           last_msg_ts[id])</label>
+		</transition>
+		<transition>
+			<source ref="id55"/>
+			<target ref="id54"/>
+			<label kind="guard" x="-1164" y="-382">initiator</label>
+			<label kind="synchronisation" x="-1164" y="-365">SAI_CONNECT_confirm[id]?</label>
+			<nail x="-1181" y="-382"/>
+			<nail x="-858" y="-382"/>
+		</transition>
+	</template>
+	<template>
+		<name>SAI_User</name>
+		<parameter>const id_t SAI_id, const bool initiator</parameter>
+		<declaration>// Place local declarations here
+
+clock t_reply;        //timer for both connection establishment and msg wait reply
+clock t_msg;          //timer for SAI_User msg: send application data msg or send disconnect msg
+
+int n_err:=0;         //errors number
+
+
+bool allSAIDisconnected()        //true if all N SAI are disconnected
+{    
+    return forall(i: id_t) !isConnected[i];
+}
+
+void initialize()                //initializes sig_queue at the beginning of the communication  between the two devices
+{
+    int i;  
+    int id;
+    for (id:=0;id&lt;N;id++)
+    {
+        for (i:=0;i&lt;queue_size;i++)
+        {    
+            sig_queue[id][i]:=empty_sig;
+        }
+        msgDelay[id]:=msgDelayStandard[id];
+    }
+}
+
+void resetSigQueue(id_t id)        //reset sig_queue at safe connection release
+{
+    int i;
+    for (i:=0;i&lt;queue_size;i++)
+    {    
+        sig_queue[id][i]:=empty_sig;
+    }
+}
+</declaration>
+		<location id="id57" x="-3765" y="-1640">
+			<name x="-3748" y="-1631">Disconnected</name>
+			<label kind="exponentialrate" x="-3740" y="-1614">connRate</label>
+		</location>
+		<location id="id58" x="-3765" y="-1853">
+			<name x="-3757" y="-1878">TryConnection</name>
+			<label kind="invariant" x="-3757" y="-1895">t_reply&lt;=T_conn_max</label>
+		</location>
+		<location id="id59" x="-3179" y="-1955">
+			<name x="-3273" y="-1946">Connected</name>
+			<label kind="invariant" x="-3400" y="-1929">t_msg&lt;=msg_freq[SAI_id] &amp;&amp;
+ t_reply&lt;=T_reply_max[SAI_id]</label>
+		</location>
+		<location id="id60" x="-4088" y="-1887">
+			<name x="-4071" y="-1896">ConnRequest</name>
+			<committed/>
+		</location>
+		<location id="id61" x="-2813" y="-1861">
+			<name x="-2796" y="-1870">StopConn</name>
+			<committed/>
+		</location>
+		<location id="id62" x="-2813" y="-2032">
+			<name x="-2795" y="-2040">SendMsg</name>
+			<committed/>
+		</location>
+		<location id="id63" x="-3494" y="-1955">
+			<name x="-3536" y="-1937">MsgIndication</name>
+			<committed/>
+		</location>
+		<branchpoint id="id64" x="-2813" y="-1955">
+		</branchpoint>
+		<init ref="id57"/>
+		<transition>
+			<source ref="id63"/>
+			<target ref="id59"/>
+			<label kind="assignment" x="-3485" y="-2006">t_reply:=0</label>
+			<nail x="-3493" y="-2031"/>
+			<nail x="-3179" y="-2031"/>
+		</transition>
+		<transition>
+			<source ref="id58"/>
+			<target ref="id58"/>
+			<label kind="guard" x="-3978" y="-1836">t_reply&gt;=T_conn_max</label>
+			<label kind="synchronisation" x="-4037" y="-1819">SAI_CONNECT_request[SAI_id]!</label>
+			<label kind="assignment" x="-3893" y="-1802">t_reply:=0</label>
+			<nail x="-3816" y="-1853"/>
+			<nail x="-3816" y="-1776"/>
+			<nail x="-3765" y="-1777"/>
+		</transition>
+		<transition>
+			<source ref="id57"/>
+			<target ref="id57"/>
+			<label kind="synchronisation" x="-4080" y="-1581">SAI_DISCONNECT_indication[SAI_id]?</label>
+			<label kind="assignment" x="-4080" y="-1564">resetSigQueue(SAI_id),
+msgDelay[SAI_id]:=msgDelayStandard[SAI_id]</label>
+			<nail x="-4088" y="-1640"/>
+			<nail x="-4088" y="-1580"/>
+			<nail x="-3765" y="-1580"/>
+		</transition>
+		<transition>
+			<source ref="id59"/>
+			<target ref="id61"/>
+			<label kind="guard" x="-3128" y="-1861">t_reply&gt;=T_reply_max[SAI_id]</label>
+			<nail x="-3179" y="-1861"/>
+		</transition>
+		<transition>
+			<source ref="id58"/>
+			<target ref="id57"/>
+			<label kind="synchronisation" x="-3714" y="-1853">SAI_DISCONNECT_indication[SAI_id]?</label>
+			<label kind="assignment" x="-3714" y="-1836">resetSigQueue(SAI_id),
+msgDelay[SAI_id]:=msgDelayStandard[SAI_id]</label>
+			<nail x="-3391" y="-1853"/>
+			<nail x="-3391" y="-1640"/>
+		</transition>
+		<transition>
+			<source ref="id62"/>
+			<target ref="id59"/>
+			<label kind="synchronisation" x="-3043" y="-2065">SAI_DATA_request[SAI_id]!</label>
+			<label kind="assignment" x="-2932" y="-2048">t_msg:=0</label>
+			<nail x="-3179" y="-2031"/>
+		</transition>
+		<transition>
+			<source ref="id61"/>
+			<target ref="id57"/>
+			<label kind="synchronisation" x="-2804" y="-1776">SAI_DISCONNECT_request[SAI_id]!</label>
+			<label kind="assignment" x="-2804" y="-1759">isConnected[SAI_id]:=false,
+resetSigQueue(SAI_id),
+msgDelay[SAI_id]:=msgDelayStandard[SAI_id],
+n_err:=0</label>
+			<nail x="-2813" y="-1640"/>
+		</transition>
+		<transition>
+			<source ref="id64"/>
+			<target ref="id62"/>
+			<label kind="probability" x="-2804" y="-1998">sendDataMsg</label>
+		</transition>
+		<transition>
+			<source ref="id64"/>
+			<target ref="id61"/>
+			<label kind="probability" x="-2804" y="-1929">stopConnMsg</label>
+		</transition>
+		<transition>
+			<source ref="id59"/>
+			<target ref="id64"/>
+			<label kind="guard" x="-3128" y="-1955">t_msg&gt;=msg_freq[SAI_id]</label>
+		</transition>
+		<transition>
+			<source ref="id59"/>
+			<target ref="id59"/>
+			<label kind="synchronisation" x="-3137" y="-2015">tau_error_notification[SAI_id]?</label>
+			<label kind="assignment" x="-3137" y="-1998">n_err++</label>
+			<nail x="-3145" y="-1955"/>
+			<nail x="-3145" y="-2032"/>
+			<nail x="-3179" y="-2031"/>
+		</transition>
+		<transition>
+			<source ref="id60"/>
+			<target ref="id59"/>
+			<label kind="synchronisation" x="-4080" y="-2006">SAI_CONNECT_response[SAI_id]!</label>
+			<label kind="assignment" x="-4080" y="-1989">isConnected[SAI_id]:=true,
+t_reply:=0,
+t_msg:=0</label>
+			<nail x="-4088" y="-2031"/>
+			<nail x="-3179" y="-2032"/>
+		</transition>
+		<transition>
+			<source ref="id57"/>
+			<target ref="id60"/>
+			<label kind="guard" x="-4080" y="-1742">!initiator</label>
+			<label kind="synchronisation" x="-4080" y="-1725">SAI_CONNECT_indication[SAI_id]?</label>
+			<nail x="-4088" y="-1640"/>
+		</transition>
+		<transition>
+			<source ref="id59"/>
+			<target ref="id57"/>
+			<label kind="synchronisation" x="-3171" y="-1776">SAI_DISCONNECT_indication[SAI_id]?</label>
+			<label kind="assignment" x="-3171" y="-1759">isConnected[SAI_id]:=false,
+resetSigQueue(SAI_id),
+msgDelay[SAI_id]:=msgDelayStandard[SAI_id],
+n_err:=0</label>
+			<nail x="-3179" y="-1640"/>
+		</transition>
+		<transition>
+			<source ref="id59"/>
+			<target ref="id63"/>
+			<label kind="synchronisation" x="-3426" y="-1972">SAI_DATA_indication[SAI_id]?</label>
+		</transition>
+		<transition>
+			<source ref="id58"/>
+			<target ref="id59"/>
+			<label kind="synchronisation" x="-3757" y="-2006">SAI_CONNECT_confirm[SAI_id]?</label>
+			<label kind="assignment" x="-3757" y="-1989">isConnected[SAI_id]:=true,
+t_reply:=0,
+t_msg:=0</label>
+			<nail x="-3765" y="-2031"/>
+			<nail x="-3179" y="-2032"/>
+		</transition>
+		<transition>
+			<source ref="id57"/>
+			<target ref="id58"/>
+			<label kind="guard" x="-3757" y="-1742">initiator &amp;&amp; allSAIDisconnected()</label>
+			<label kind="synchronisation" x="-3757" y="-1725">SAI_CONNECT_request[SAI_id]!</label>
+			<label kind="assignment" x="-3757" y="-1708">initialize(),
+t_reply:=0</label>
+		</transition>
+	</template>
+	<system>// Place template instantiations here.
+
+sai_sender_ini = SAI_Sender(ID_SAI_INITIATOR,Initiator);
+sai_receiver_ini = SAI_Receiver(ID_SAI_INITIATOR,Initiator);
+sai_conn_ini = SAI_Conn_Ini(ID_SAI_INITIATOR);
+sai_tts_init_ini = SAI_TTS_Init_Ini(ID_SAI_INITIATOR);
+sai_update_req_ini = SAI_Update_Req(ID_SAI_INITIATOR,Initiator);
+sai_update_answ_ini = SAI_Update_Answ(ID_SAI_INITIATOR,Initiator);
+//sai_clock_check_ini = SAI_Clock_Check(ID_SAI_INITIATOR);
+//sai_sn_check_ini = SAI_SN_Check(ID_SAI_INITIATOR);
+user_ini = SAI_User(ID_SAI_INITIATOR,Initiator);
+euroradio_env_ini = Euroradio_SL_Env(ID_SAI_INITIATOR,ID_SAI_RESPONDER);
+
+sai_sender_res = SAI_Sender(ID_SAI_RESPONDER,!Initiator);
+sai_receiver_res = SAI_Receiver(ID_SAI_RESPONDER,!Initiator);
+sai_conn_res = SAI_Conn_Res(ID_SAI_RESPONDER);
+sai_tts_init_res = SAI_TTS_Init_Res(ID_SAI_RESPONDER);
+sai_update_req_res = SAI_Update_Req(ID_SAI_RESPONDER,!Initiator);
+sai_update_answ_res = SAI_Update_Answ(ID_SAI_RESPONDER,!Initiator);
+//sai_clock_check_res = SAI_Clock_Check(ID_SAI_RESPONDER);
+//sai_sn_check_res = SAI_SN_Check(ID_SAI_RESPONDER);
+user_res = SAI_User(ID_SAI_RESPONDER,!Initiator);
+euroradio_env_res = Euroradio_SL_Env(ID_SAI_RESPONDER,ID_SAI_INITIATOR);
+
+communication_system = Communication_System();
+fault_injector = Fault_Injector();
+
+// List one or more processes to be composed into a system.
+system 
+user_ini, user_res,
+sai_conn_ini, sai_conn_res,
+sai_tts_init_ini, sai_tts_init_res,
+sai_sender_ini, sai_sender_res,
+sai_receiver_ini, sai_receiver_res,
+sai_update_req_ini, sai_update_answ_ini,
+sai_update_req_res, sai_update_answ_res,
+//sai_clock_check_ini, sai_clock_check_res,
+//sai_sn_check_ini, sai_sn_check_res,
+euroradio_env_ini, euroradio_env_res,
+communication_system,
+fault_injector;
+
+
+</system>
+	<queries>
+		<query>
+			<formula>Pr[&lt;=1000](&lt;&gt; (exists(id: id_t) isQueueFull(id)))</formula>
+			<comment>Probability estimation of at least one msg_queue full while euroradio_env is connected (not desirable)</comment>
+		</query>
+		<query>
+			<formula>Pr[&lt;=1000](&lt;&gt; (sai_tts_init_ini.ConnectionFailure))</formula>
+			<comment>Probability estimation of SAI_TTS_Init_Ini reaching ConnectionFailure location (not desirable)</comment>
+		</query>
+		<query>
+			<formula>Pr[&lt;=1000](&lt;&gt; (fault_injector.DoFault))</formula>
+			<comment>Probability estimation of Fault_Injector reaching DoFault location </comment>
+		</query>
+		<query>
+			<formula>Pr[&lt;=1000](&lt;&gt; (sai_receiver_ini.sn_diff&lt;0) || (sai_receiver_res.sn_diff&lt;0))</formula>
+			<comment>Probability estimation of SAI receiveing a new msg that is earlier then the last one (sn_diff&lt;0)</comment>
+		</query>
+		<query>
+			<formula>Pr[&lt;=1000](&lt;&gt; (sai_receiver_ini.sig!=empty_sig &amp;&amp; sai_receiver_ini.sn_diff==0) || 
+	      (sai_receiver_res.sig!=empty_sig &amp;&amp; sai_receiver_res.sn_diff==0) )</formula>
+			<comment>Probability estimation of SAI receiveing the same msg 2 times (sn_diff==0)</comment>
+		</query>
+		<query>
+			<formula>Pr[&lt;=1000](&lt;&gt; (sai_receiver_ini.sn_diff&gt;1 &amp;&amp; sai_receiver_ini.sn_diff&lt;=N_max_lost_msg[ID_SAI_INITIATOR] &amp;&amp; sai_receiver_ini.T_diff&gt;=0 &amp;&amp; sai_receiver_ini.T_diff&lt;=T_max[ID_SAI_INITIATOR]) || 
+	      (sai_receiver_res.sn_diff&gt;1 &amp;&amp; sai_receiver_res.sn_diff&lt;=N_max_lost_msg[ID_SAI_RESPONDER] &amp;&amp; sai_receiver_res.T_diff&gt;=0 &amp;&amp; sai_receiver_res.T_diff&lt;=T_max[ID_SAI_RESPONDER]) )</formula>
+			<comment>Probability estimation of SAI receiveing a new msg and sn_diff&gt;1 &amp;&amp; sn_diff&lt;=N_max_lost_msg with acceptable delay</comment>
+		</query>
+		<query>
+			<formula>Pr[&lt;=1000](&lt;&gt; (sai_receiver_ini.sig.msg.mtf==App_Msg &amp;&amp; sai_receiver_ini.sn_diff&gt;1 &amp;&amp; sai_receiver_ini.sn_diff&lt;=N_max_lost_msg[ID_SAI_INITIATOR] &amp;&amp; (sai_receiver_ini.T_diff&lt;0 || sai_receiver_ini.T_diff&gt;T_max[ID_SAI_INITIATOR])) || 
+	      (sai_receiver_res.sig.msg.mtf==App_Msg &amp;&amp; sai_receiver_res.sn_diff&gt;1 &amp;&amp; sai_receiver_res.sn_diff&lt;=N_max_lost_msg[ID_SAI_RESPONDER] &amp;&amp; (sai_receiver_res.T_diff&lt;0 || sai_receiver_res.T_diff&gt;T_max[ID_SAI_RESPONDER])) )</formula>
+			<comment>Probability estimation of SAI receiveing a new msg and sn_diff&gt;1 &amp;&amp; sn_diff&lt;=N_max_lost_msg with unacceptable delay</comment>
+		</query>
+		<query>
+			<formula>Pr[&lt;=1000](&lt;&gt; (sai_receiver_ini.sig.msg.mtf==App_Msg &amp;&amp; sai_receiver_ini.sn_diff==1 &amp;&amp; (sai_receiver_ini.T_diff&lt;0 || sai_receiver_ini.T_diff&gt;T_max[ID_SAI_INITIATOR])) ||
+	      (sai_receiver_res.sig.msg.mtf==App_Msg &amp;&amp; sai_receiver_res.sn_diff==1 &amp;&amp; (sai_receiver_res.T_diff&lt;0 || sai_receiver_res.T_diff&gt;T_max[ID_SAI_RESPONDER])) ) </formula>
+			<comment>Probability estimation of SAI Initiator receiving a correct msg (SAI.sn_diff==1) but having an unacceptable delay</comment>
+		</query>
+	</queries>
+</nta>

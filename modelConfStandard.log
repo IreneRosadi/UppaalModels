@@ -1,0 +1,56 @@
+Options for the verification:
+  Generating no trace
+  Search order is breadth first
+  Using conservative space optimisation
+  Seed is 1618768759
+  State space representation uses minimal constraint systems
+[2K
+Verifying formula 1 at /nta/queries/query[1]/formula
+ -- Throughput: 133429 states/sec, Load: 87222 runs[K -- Throughput: 132725 states/sec, Load: 87167 runs[K -- Throughput: 134513 states/sec, Load: 87112 runs[K -- Throughput: 134491 states/sec, Load: 87057 runs[K -- Throughput: 134465 states/sec, Load: 87001 runs[K -- Throughput: 134283 states/sec, Load: 86946 runs[K -- Throughput: 134013 states/sec, Load: 86890 runs[K -- Throughput: 132674 states/sec, Load: 86834 runs[K -- Throughput: 135098 states/sec, Load: 86779 runs[K -- Throughput: 133321 states/sec, Load: 86722 runs[K -- Throughput: 133288 states/sec, Load: 86667 runs[K -- Throughput: 134928 states/sec, Load: 86613 runs[K -- Throughput: 133714 states/sec, Load: 86556 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
+[2K
+Verifying formula 2 at /nta/queries/query[2]/formula
+ -- Throughput: 14 states/sec, Load: 87306 runs[K -- Throughput: 133448 states/sec, Load: 87212 runs[K -- Throughput: 133937 states/sec, Load: 87157 runs[K -- Throughput: 134214 states/sec, Load: 87101 runs[K -- Throughput: 133817 states/sec, Load: 87046 runs[K -- Throughput: 134029 states/sec, Load: 86991 runs[K -- Throughput: 133845 states/sec, Load: 86936 runs[K -- Throughput: 133594 states/sec, Load: 86881 runs[K -- Throughput: 133597 states/sec, Load: 86826 runs[K -- Throughput: 112811 states/sec, Load: 86770 runs[K -- Throughput: 21771 states/sec, Load: 86723 runs[K -- Throughput: 133485 states/sec, Load: 86660 runs[K -- Throughput: 133913 states/sec, Load: 86605 runs[K -- Throughput: 133782 states/sec, Load: 86550 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
+[2K
+Verifying formula 3 at /nta/queries/query[3]/formula
+ -- Throughput: 6 states/sec, Load: 87306 runs[K -- Throughput: 134438 states/sec, Load: 87225 runs[K -- Throughput: 134556 states/sec, Load: 87170 runs[K -- Throughput: 134989 states/sec, Load: 87114 runs[K -- Throughput: 134945 states/sec, Load: 87058 runs[K -- Throughput: 134943 states/sec, Load: 87002 runs[K -- Throughput: 135096 states/sec, Load: 86945 runs[K -- Throughput: 134544 states/sec, Load: 86890 runs[K -- Throughput: 134801 states/sec, Load: 86833 runs[K -- Throughput: 134692 states/sec, Load: 86777 runs[K -- Throughput: 134854 states/sec, Load: 86721 runs[K -- Throughput: 134431 states/sec, Load: 86666 runs[K -- Throughput: 134788 states/sec, Load: 86610 runs[K -- Throughput: 134799 states/sec, Load: 86554 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
+[2K
+Verifying formula 4 at /nta/queries/query[4]/formula
+ -- Throughput: 4 states/sec, Load: 87306 runs[K -- Throughput: 129591 states/sec, Load: 87252 runs[K -- Throughput: 129874 states/sec, Load: 87199 runs[K -- Throughput: 130285 states/sec, Load: 87146 runs[K -- Throughput: 129945 states/sec, Load: 87091 runs[K -- Throughput: 129820 states/sec, Load: 87037 runs[K -- Throughput: 129481 states/sec, Load: 86984 runs[K -- Throughput: 130029 states/sec, Load: 86930 runs[K -- Throughput: 129738 states/sec, Load: 86876 runs[K -- Throughput: 130188 states/sec, Load: 86822 runs[K -- Throughput: 130207 states/sec, Load: 86768 runs[K -- Throughput: 129807 states/sec, Load: 86714 runs[K -- Throughput: 129540 states/sec, Load: 86660 runs[K -- Throughput: 129627 states/sec, Load: 86607 runs[K -- Throughput: 129673 states/sec, Load: 86554 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
+[2K
+Verifying formula 5 at /nta/queries/query[5]/formula
+ -- Throughput: 3 states/sec, Load: 87306 runs[K -- Throughput: 134883 states/sec, Load: 87225 runs[K -- Throughput: 133911 states/sec, Load: 87169 runs[K -- Throughput: 134364 states/sec, Load: 87113 runs[K -- Throughput: 133946 states/sec, Load: 87057 runs[K -- Throughput: 134072 states/sec, Load: 87002 runs[K -- Throughput: 134046 states/sec, Load: 86946 runs[K -- Throughput: 134058 states/sec, Load: 86890 runs[K -- Throughput: 133851 states/sec, Load: 86835 runs[K -- Throughput: 133907 states/sec, Load: 86780 runs[K -- Throughput: 133922 states/sec, Load: 86725 runs[K -- Throughput: 134078 states/sec, Load: 86670 runs[K -- Throughput: 134246 states/sec, Load: 86614 runs[K -- Throughput: 134040 states/sec, Load: 86558 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
+[2K
+Verifying formula 6 at /nta/queries/query[6]/formula
+ -- Throughput: 2 states/sec, Load: 87306 runs[K -- Throughput: 133060 states/sec, Load: 87198 runs[K -- Throughput: 133703 states/sec, Load: 87143 runs[K -- Throughput: 133079 states/sec, Load: 87088 runs[K -- Throughput: 133126 states/sec, Load: 87033 runs[K -- Throughput: 133052 states/sec, Load: 86978 runs[K -- Throughput: 133167 states/sec, Load: 86923 runs[K -- Throughput: 133442 states/sec, Load: 86867 runs[K -- Throughput: 133172 states/sec, Load: 86812 runs[K -- Throughput: 133067 states/sec, Load: 86758 runs[K -- Throughput: 132791 states/sec, Load: 86703 runs[K -- Throughput: 133629 states/sec, Load: 86647 runs[K -- Throughput: 133215 states/sec, Load: 86592 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
+[2K
+Verifying formula 7 at /nta/queries/query[7]/formula
+ -- Throughput: 2 states/sec, Load: 87306 runs[K -- Throughput: 133539 states/sec, Load: 87198 runs[K -- Throughput: 133408 states/sec, Load: 87143 runs[K -- Throughput: 133808 states/sec, Load: 87087 runs[K -- Throughput: 134042 states/sec, Load: 87032 runs[K -- Throughput: 133977 states/sec, Load: 86976 runs[K -- Throughput: 133638 states/sec, Load: 86920 runs[K -- Throughput: 134254 states/sec, Load: 86864 runs[K -- Throughput: 133598 states/sec, Load: 86808 runs[K -- Throughput: 133690 states/sec, Load: 86753 runs[K -- Throughput: 133639 states/sec, Load: 86697 runs[K -- Throughput: 133304 states/sec, Load: 86642 runs[K -- Throughput: 133394 states/sec, Load: 86587 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
+[2K
+Verifying formula 8 at /nta/queries/query[8]/formula
+ -- Throughput: 1 states/sec, Load: 87306 runs[K -- Throughput: 135448 states/sec, Load: 87198 runs[K -- Throughput: 135363 states/sec, Load: 87141 runs[K -- Throughput: 135236 states/sec, Load: 87085 runs[K -- Throughput: 135585 states/sec, Load: 87029 runs[K -- Throughput: 135075 states/sec, Load: 86974 runs[K -- Throughput: 135376 states/sec, Load: 86917 runs[K -- Throughput: 135056 states/sec, Load: 86862 runs[K -- Throughput: 135318 states/sec, Load: 86806 runs[K -- Throughput: 135607 states/sec, Load: 86750 runs[K -- Throughput: 135084 states/sec, Load: 86694 runs[K -- Throughput: 135508 states/sec, Load: 86638 runs[K -- Throughput: 135283 states/sec, Load: 86582 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
+[2K
+Verifying formula 9 at /nta/queries/query[9]/formula
+ -- Throughput: 1 states/sec, Load: 87306 runs[K -- Throughput: 137368 states/sec, Load: 87198 runs[K -- Throughput: 134067 states/sec, Load: 87142 runs[K -- Throughput: 134451 states/sec, Load: 87086 runs[K -- Throughput: 134603 states/sec, Load: 87030 runs[K -- Throughput: 133930 states/sec, Load: 86974 runs[K -- Throughput: 134302 states/sec, Load: 86919 runs[K -- Throughput: 134294 states/sec, Load: 86863 runs[K -- Throughput: 133957 states/sec, Load: 86807 runs[K -- Throughput: 132825 states/sec, Load: 86752 runs[K -- Throughput: 134132 states/sec, Load: 86697 runs[K -- Throughput: 134053 states/sec, Load: 86642 runs[K -- Throughput: 133903 states/sec, Load: 86587 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
+[2K
+Verifying formula 10 at /nta/queries/query[10]/formula
+ -- Throughput: 1 states/sec, Load: 87306 runs[K -- Throughput: 134687 states/sec, Load: 87198 runs[K -- Throughput: 134576 states/sec, Load: 87142 runs[K -- Throughput: 134964 states/sec, Load: 87086 runs[K -- Throughput: 134983 states/sec, Load: 87031 runs[K -- Throughput: 134217 states/sec, Load: 86974 runs[K -- Throughput: 134547 states/sec, Load: 86919 runs[K -- Throughput: 134745 states/sec, Load: 86864 runs[K -- Throughput: 134686 states/sec, Load: 86808 runs[K -- Throughput: 134914 states/sec, Load: 86753 runs[K -- Throughput: 134616 states/sec, Load: 86697 runs[K -- Throughput: 134870 states/sec, Load: 86642 runs[K -- Throughput: 134647 states/sec, Load: 86586 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.

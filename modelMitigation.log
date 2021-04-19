@@ -1,0 +1,11 @@
+Options for the verification:
+  Generating no trace
+  Search order is breadth first
+  Using conservative space optimisation
+  Seed is 1618773534
+  State space representation uses minimal constraint systems
+[2K
+Verifying formula 1 at /nta/queries/query[1]/formula
+ -- Throughput: 113422 states/sec, Load: 87220 runs[K -- Throughput: 114341 states/sec, Load: 87172 runs[K -- Throughput: 114845 states/sec, Load: 87123 runs[K -- Throughput: 41633 states/sec, Load: 87075 runs[K -- Throughput: 13168 states/sec, Load: 87057 runs[K -- Throughput: 120898 states/sec, Load: 86973 runs[K -- Throughput: 119263 states/sec, Load: 86922 runs[K -- Throughput: 21521 states/sec, Load: 86872 runs[K -- Throughput: 118578 states/sec, Load: 86808 runs[K -- Throughput: 21380 states/sec, Load: 86758 runs[K -- Throughput: 113241 states/sec, Load: 86694 runs[K -- Throughput: 116853 states/sec, Load: 86646 runs[K -- Throughput: 117240 states/sec, Load: 86597 runs[K[2K -- Formula is satisfied.
+(757 runs) Pr(<> ...) in [0,0.00999058]
+with confidence 0.9995.
